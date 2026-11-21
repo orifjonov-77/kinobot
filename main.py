@@ -3,11 +3,14 @@ Main entry point for the Telegram Movie Bot.
 Configures logging, database, error handler, and registers all handlers.
 """
 
+import asyncio
 import html
 import json
 import logging
+import os
 import sys
 import traceback
+from aiohttp import web
 from telegram import Update
 from telegram.constants import ParseMode
 from telegram.error import NetworkError, RetryAfter, TimedOut
@@ -87,17 +90,39 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
             logger.error("Failed to send error notification message: %s", e)
 
 
-def main() -> None:
-    """Initialize database and start the bot polling."""
+async def start_dummy_webserver() -> None:
+    """Run a minimal web server so Render Web Service health checks succeed."""
+    async def handle_ping(request: web.Request) -> web.Response:
+        return web.Response(text="Bot is running!")
+
+    app = web.Application()
+    app.router.add_get("/", handle_ping)
+    app.router.add_get("/health", handle_ping)
+
+    port = int(os.getenv("PORT", "8080"))
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+    logger.info("Health check web server running on port %s", port)
+
+
+async def run_bot() -> None:
+    """Initialize database, web server, and start bot polling asynchronously."""
     if not BOT_TOKEN or BOT_TOKEN == "your_bot_token_here":
         print("\n[XATOLIK] BOT_TOKEN sozlanmagan!")
         print("Iltimos, '.env' faylini oching va BOT_TOKEN qiymatini kiriting.")
-        print("Namuna: BOT_TOKEN=123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ\n")
         sys.exit(1)
 
     # Initialize SQLite database tables
     init_db()
     logger.info("Database initialized successfully.")
+
+    # Start health check server for Render free Web Service
+    try:
+        await start_dummy_webserver()
+    except Exception as e:
+        logger.warning("Could not start dummy web server: %s", e)
 
     # Build Application
     application = (
@@ -179,7 +204,21 @@ def main() -> None:
     logger.info("Bot ishga tushmoqda...")
     print("Bot muvaffaqiyatli ishga tushdi! To'xtatish uchun Ctrl+C bosing.")
 
-    application.run_polling(drop_pending_updates=True)
+    async with application:
+        await application.initialize()
+        await application.start()
+        await application.updater.start_polling(drop_pending_updates=True)
+        # Keep running indefinitely
+        while True:
+            await asyncio.sleep(3600)
+
+
+def main() -> None:
+    """Main entry point."""
+    try:
+        asyncio.run(run_bot())
+    except (KeyboardInterrupt, SystemExit):
+        logger.info("Bot to'xtatildi.")
 
 
 if __name__ == "__main__":
