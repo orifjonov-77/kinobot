@@ -1,0 +1,22 @@
+# Environment variables (secret tokens)
+.env
+
+# Python cache & virtualenv
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+
+# SQLite databases
+*.db
+*.sqlite3
+
+# Logs
+*.log
+bot.log
+
+# VS Code & IDE settings
+.vscode/
+.idea/
